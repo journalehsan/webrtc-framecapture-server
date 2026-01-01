@@ -2,6 +2,13 @@
 
 A standalone C++ WebRTC receiver service (video only). It accepts an SDP offer over HTTP, returns an SDP answer, receives a WebRTC video track, and saves decoded frames as a PNG sequence. Optionally, it can write an MP4 using OpenCV's `cv::VideoWriter`.
 
+## What’s implemented
+- Standalone C++17 service with HTTP signaling and a single peer connection
+- WebRTC receive pipeline built on native Google libwebrtc
+- OpenCV I420 -> BGR conversion and frame capture to PNG/MP4
+- Thread-safe frame writer (v1 uses a simple mutex)
+- Basic unit tests for pixel conversion and file output
+
 ## Features
 - HTTP signaling with `/offer` and `/candidate`
 - WebRTC video-only receive pipeline (libwebrtc)
@@ -43,9 +50,30 @@ cmake -S . -B build \
 cmake --build build -j
 ```
 
+## Run with Docker
+Docker assumes the service binary is `webrtc_capture` and supports:
+`--http-port`, `--ice-udp-min`, `--ice-udp-max`, `--out`, `--write-images`, `--write-video`.
+If your binary or flags differ, adjust `Dockerfile` and `docker-compose.yml` accordingly.
+
+Libwebrtc headers/libs must be available in the build context, for example:
+- `third_party/webrtc/include`
+- `third_party/webrtc/libwebrtc.a`
+
+```bash
+./manage.sh setup
+./manage.sh start
+./manage.sh logs
+```
+
+Notes:
+- Bridge mode (default) maps TCP 8080 and a UDP range for ICE.
+- For local demos on Linux, host networking is simplest:
+  `./manage.sh start --hostnet`
+- In bridge mode, ensure the UDP range is open in your firewall.
+
 ## Run
 ```bash
-./build/webrtc_framecapture_server --port 8080 --output out --write-mp4 --mp4-fps 30
+./build/webrtc_capture --port 8080 --output out --write-mp4 --mp4-fps 30
 ```
 
 Outputs:
@@ -55,6 +83,21 @@ Outputs:
 ## HTTP API
 - `POST /offer` body: `{ "type":"offer", "sdp":"..." }`
 - `POST /candidate` body: `{ "sdpMid":"0", "sdpMLineIndex":0, "candidate":"candidate:..." }`
+
+## Flow (high level)
+1. Browser sends `/offer` with SDP
+2. Server creates a `PeerConnection`, sets remote offer, returns `/answer`
+3. Browser sends ICE candidates to `/candidate`
+4. On `OnTrack`, the server attaches a `VideoFrameSink`
+5. Each frame is converted to BGR and written to disk
+
+## Project layout
+- `src/app` App orchestrates config, WebRTC, and HTTP signaling
+- `src/signaling` HTTP server (cpp-httplib + nlohmann/json)
+- `src/webrtc` WebRTC factory, peer, SDP utils, observers, video sink
+- `src/media` OpenCV conversion and frame writer
+- `src/util` args parsing and logging
+- `tests` unit tests
 
 ## Browser client sample
 ```html

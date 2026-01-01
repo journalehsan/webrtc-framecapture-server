@@ -54,9 +54,9 @@ target_compile_definitions(webrtc_receiver PUBLIC _GLIBCXX_USE_CXX11_ABI=1)
 
 target_compile_options(webrtc_receiver PRIVATE -Wall -Wextra -Wpedantic)
 
-add_executable(webrtc_framecapture_server src/main.cpp)
+add_executable(webrtc_capture src/main.cpp)
 
-target_link_libraries(webrtc_framecapture_server PRIVATE webrtc_receiver)
+target_link_libraries(webrtc_capture PRIVATE webrtc_receiver)
 
 if(ENABLE_TESTS)
   enable_testing()

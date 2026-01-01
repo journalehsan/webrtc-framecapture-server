@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  webrtc-capture:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: webrtc-capture:latest
+    container_name: webrtc-capture
+    ports:
+      - "${HTTP_PORT:-8080}:8080/tcp"
+      - "${ICE_UDP_MIN:-30000}-${ICE_UDP_MAX:-30100}:${ICE_UDP_MIN:-30000}-${ICE_UDP_MAX:-30100}/udp"
+    environment:
+      HTTP_PORT: ${HTTP_PORT:-8080}
+      ICE_UDP_MIN: ${ICE_UDP_MIN:-30000}
+      ICE_UDP_MAX: ${ICE_UDP_MAX:-30100}
+      OUT_DIR: /app/out
+      WRITE_IMAGES: ${WRITE_IMAGES:-1}
+      WRITE_VIDEO: ${WRITE_VIDEO:-1}
+    volumes:
+      - ./out:/app/out
