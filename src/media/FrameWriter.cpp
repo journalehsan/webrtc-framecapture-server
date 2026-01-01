@@ -10,9 +10,14 @@
 
 namespace media {
 
-FrameWriter::FrameWriter(std::string output_dir, bool write_mp4, std::string mp4_path, double mp4_fps)
+FrameWriter::FrameWriter(std::string output_dir,
+                         bool write_images,
+                         bool write_video,
+                         std::string mp4_path,
+                         double mp4_fps)
     : output_dir_(std::move(output_dir)),
-      write_mp4_(write_mp4),
+      write_images_(write_images),
+      write_video_(write_video),
       mp4_path_(std::move(mp4_path)),
       mp4_fps_(mp4_fps) {}
 
@@ -25,7 +30,7 @@ void FrameWriter::EnsureOutputDir() {
 }
 
 void FrameWriter::EnsureVideoWriter(const cv::Size& size) {
-  if (!write_mp4_) {
+  if (!write_video_) {
     return;
   }
   if (writer_.has_value()) {
@@ -42,14 +47,17 @@ void FrameWriter::EnsureVideoWriter(const cv::Size& size) {
 
 void FrameWriter::OnFrame(const cv::Mat& bgr) {
   std::lock_guard<std::mutex> lock(mutex_);
-  EnsureOutputDir();
+  if (write_images_) {
+    EnsureOutputDir();
+  }
   EnsureVideoWriter(bgr.size());
 
-  std::ostringstream name;
-  name << output_dir_ << "/frames/frame_" << std::setw(8) << std::setfill('0')
-       << (frame_index_ + 1) << ".png";
-
-  cv::imwrite(name.str(), bgr);
+  if (write_images_) {
+    std::ostringstream name;
+    name << output_dir_ << "/frames/frame_" << std::setw(8) << std::setfill('0')
+         << (frame_index_ + 1) << ".png";
+    cv::imwrite(name.str(), bgr);
+  }
   if (writer_.has_value()) {
     (*writer_) << bgr;
   }

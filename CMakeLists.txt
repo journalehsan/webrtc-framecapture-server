@@ -9,63 +9,40 @@ option(ENABLE_TESTS "Build tests" ON)
 
 find_package(Threads REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libavutil libswscale)
 
-set(WEBRTC_INCLUDE_DIR "" CACHE PATH "Path to WebRTC include directory")
-set(WEBRTC_LIBRARY "" CACHE FILEPATH "Path to WebRTC library")
-set(THIRD_PARTY_INCLUDE_DIR "" CACHE PATH "Path to header-only deps (httplib/json)")
-
-if(NOT WEBRTC_INCLUDE_DIR OR NOT EXISTS "${WEBRTC_INCLUDE_DIR}")
-  message(FATAL_ERROR "WEBRTC_INCLUDE_DIR is required and must exist")
-endif()
-if(NOT WEBRTC_LIBRARY OR NOT EXISTS "${WEBRTC_LIBRARY}")
-  message(FATAL_ERROR "WEBRTC_LIBRARY is required and must exist")
-endif()
-
-add_library(webrtc_receiver
+add_library(capture_app
   src/app/App.cpp
-  src/signaling/HttpSignalingServer.cpp
-  src/webrtc/WebrtcFactory.cpp
-  src/webrtc/Peer.cpp
-  src/webrtc/SdpUtils.cpp
-  src/webrtc/Observers.cpp
-  src/webrtc/VideoFrameSink.cpp
-  src/media/MatUtils.cpp
+  src/ingest/RtpReceiver.cpp
   src/media/FrameWriter.cpp
   src/util/Args.cpp
   src/util/Log.cpp
 )
 
-target_include_directories(webrtc_receiver
+target_include_directories(capture_app
   PUBLIC
     ${OpenCV_INCLUDE_DIRS}
-    ${WEBRTC_INCLUDE_DIR}
-    ${THIRD_PARTY_INCLUDE_DIR}
+    ${FFMPEG_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(webrtc_receiver
+target_compile_options(capture_app PRIVATE -Wall -Wextra -Wpedantic)
+
+target_link_libraries(capture_app
   PUBLIC
     ${OpenCV_LIBS}
-    ${WEBRTC_LIBRARY}
+    ${FFMPEG_LIBRARIES}
     Threads::Threads
 )
 
-target_compile_definitions(webrtc_receiver PUBLIC _GLIBCXX_USE_CXX11_ABI=1)
-
-target_compile_options(webrtc_receiver PRIVATE -Wall -Wextra -Wpedantic)
-
 add_executable(webrtc_capture src/main.cpp)
-
-target_link_libraries(webrtc_capture PRIVATE webrtc_receiver)
+target_link_libraries(webrtc_capture PRIVATE capture_app)
 
 if(ENABLE_TESTS)
   enable_testing()
 
-  add_executable(test_matutils tests/test_matutils.cpp)
-  target_link_libraries(test_matutils PRIVATE webrtc_receiver)
-  add_test(NAME test_matutils COMMAND test_matutils)
-
   add_executable(test_framewriter tests/test_framewriter.cpp)
-  target_link_libraries(test_framewriter PRIVATE webrtc_receiver)
+  target_link_libraries(test_framewriter PRIVATE capture_app)
   add_test(NAME test_framewriter COMMAND test_framewriter)
 endif()

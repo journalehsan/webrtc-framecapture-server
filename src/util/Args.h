@@ -5,11 +5,12 @@
 namespace util {
 
 struct Args {
-  int port = 8080;
+  std::string rtp_url = "rtp://0.0.0.0:5004?protocol_whitelist=file,udp,rtp";
   std::string output_dir = "out";
-  bool write_mp4 = false;
+  bool write_images = true;
+  bool write_video = true;
   std::string mp4_path = "out/capture.mp4";
-  double mp4_fps = 30.0;
+  double fps = 30.0;
 };
 
 Args ParseArgs(int argc, char** argv);

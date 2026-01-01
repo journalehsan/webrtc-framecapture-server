@@ -11,7 +11,11 @@ namespace media {
 
 class FrameWriter {
  public:
-  FrameWriter(std::string output_dir, bool write_mp4, std::string mp4_path, double mp4_fps);
+  FrameWriter(std::string output_dir,
+              bool write_images,
+              bool write_video,
+              std::string mp4_path,
+              double mp4_fps);
 
   void OnFrame(const cv::Mat& bgr);
 
@@ -21,7 +25,8 @@ class FrameWriter {
 
   std::mutex mutex_;
   std::string output_dir_;
-  bool write_mp4_;
+  bool write_images_;
+  bool write_video_;
   std::string mp4_path_;
   double mp4_fps_;
   size_t frame_index_ = 0;

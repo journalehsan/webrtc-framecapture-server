@@ -16,7 +16,7 @@ void HandleSignal(int) {
 }
 
 int main(int argc, char** argv) {
-  util::Log::Instance().SetPrefix("webrtc-framecapture");
+  util::Log::Instance().SetPrefix("rtp-capture");
   std::signal(SIGINT, HandleSignal);
   std::signal(SIGTERM, HandleSignal);
 
