@@ -1,21 +1,48 @@
-version: "3.8"
-
 services:
-  webrtc-capture:
+  janus:
+    image: canyan/janus-gateway:latest
+    container_name: janus
+    ports:
+      - "8088:8088/tcp"
+      - "8188:8188/tcp"
+      - "10000-10200:10000-10200/udp"
+    volumes:
+      - ./janus/janus.jcfg:/opt/janus/etc/janus/janus.jcfg:ro
+      - ./janus/janus.plugin.videoroom.jcfg:/opt/janus/etc/janus/janus.plugin.videoroom.jcfg:ro
+    dns:
+      - 178.22.122.101
+      - 185.51.200.1
+    networks:
+      - webrtcnet
+
+  capture:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        ALL_PROXY: ${ALL_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
     image: webrtc-capture:latest
     container_name: webrtc-capture
-    ports:
-      - "${HTTP_PORT:-8080}:8080/tcp"
-      - "${ICE_UDP_MIN:-30000}-${ICE_UDP_MAX:-30100}:${ICE_UDP_MIN:-30000}-${ICE_UDP_MAX:-30100}/udp"
+    depends_on:
+      - janus
     environment:
-      HTTP_PORT: ${HTTP_PORT:-8080}
-      ICE_UDP_MIN: ${ICE_UDP_MIN:-30000}
-      ICE_UDP_MAX: ${ICE_UDP_MAX:-30100}
+      RTP_URL: ${RTP_URL:-/app/config/rtp.sdp}
       OUT_DIR: /app/out
       WRITE_IMAGES: ${WRITE_IMAGES:-1}
       WRITE_VIDEO: ${WRITE_VIDEO:-1}
+      FPS: ${FPS:-30}
     volumes:
       - ./out:/app/out
+      - ./config/rtp.sdp:/app/config/rtp.sdp:ro
+    dns:
+      - 178.22.122.101
+      - 185.51.200.1
+    networks:
+      - webrtcnet
+
+networks:
+  webrtcnet:
+    driver: bridge

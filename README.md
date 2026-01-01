@@ -1,157 +1,93 @@
-# WebRTC Frame Capture Server (C++17)
+# WebRTC RTP Capture (Janus + FFmpeg + OpenCV)
 
-A standalone C++ WebRTC receiver service (video only). It accepts an SDP offer over HTTP, returns an SDP answer, receives a WebRTC video track, and saves decoded frames as a PNG sequence. Optionally, it can write an MP4 using OpenCV's `cv::VideoWriter`.
+This project avoids building Google libwebrtc from source. Instead, it uses:
+- **Janus Gateway** to accept WebRTC from the browser.
+- **RTP forward** from Janus to a capture container.
+- **FFmpeg/libav** to receive/decode RTP.
+- **OpenCV** in C++17 to save frames and optional MP4.
 
-## What’s implemented
-- Standalone C++17 service with HTTP signaling and a single peer connection
-- WebRTC receive pipeline built on native Google libwebrtc
-- OpenCV I420 -> BGR conversion and frame capture to PNG/MP4
-- Thread-safe frame writer (v1 uses a simple mutex)
-- Basic unit tests for pixel conversion and file output
+Audio is ignored.
 
-## Features
-- HTTP signaling with `/offer` and `/candidate`
-- WebRTC video-only receive pipeline (libwebrtc)
-- OpenCV frame conversion and writing
-- Thread-safe frame writer
-- Minimal unit tests for conversion and writing
+## Architecture
+- `janus` container: receives WebRTC, forwards video via RTP to the Docker network.
+- `capture` container: decodes RTP with libavformat/libavcodec and writes frames with OpenCV.
 
-## Dependencies
-- Ubuntu 22.04
-- CMake >= 3.16
-- OpenCV
-- libwebrtc (native Google WebRTC build)
-- cpp-httplib (single header)
-- nlohmann/json (single header)
+Code layout:
+- `src/ingest/RtpReceiver.*` FFmpeg-based RTP receiver
+- `src/media/FrameWriter.*` OpenCV output
+- `src/app/App.*` orchestration
 
-Install OpenCV:
-```bash
-sudo apt-get update
-sudo apt-get install -y libopencv-dev
-```
-
-### libwebrtc
-Build or obtain a libwebrtc build and note:
-- `WEBRTC_INCLUDE_DIR`: path containing `api/`, `rtc_base/`, etc.
-- `WEBRTC_LIBRARY`: path to the compiled WebRTC library (e.g. `libwebrtc.a` or `.so`)
-
-### Header-only deps
-Install or vendor the headers so they are in your include path:
-- `httplib.h`
-- `nlohmann/json.hpp`
-
-## Build
-```bash
-cmake -S . -B build \
-  -DWEBRTC_INCLUDE_DIR=/path/to/webrtc/include \
-  -DWEBRTC_LIBRARY=/path/to/libwebrtc.a \
-  -DTHIRD_PARTY_INCLUDE_DIR=/path/to/headers
-
-cmake --build build -j
-```
-
-## Run with Docker
-Docker assumes the service binary is `webrtc_capture` and supports:
-`--http-port`, `--ice-udp-min`, `--ice-udp-max`, `--out`, `--write-images`, `--write-video`.
-If your binary or flags differ, adjust `Dockerfile` and `docker-compose.yml` accordingly.
-
-Libwebrtc headers/libs must be available in the build context, for example:
-- `third_party/webrtc/include`
-- `third_party/webrtc/libwebrtc.a`
-
+## Quick start
 ```bash
 ./manage.sh setup
 ./manage.sh start
-./manage.sh logs
 ```
 
-Notes:
-- Bridge mode (default) maps TCP 8080 and a UDP range for ICE.
-- For local demos on Linux, host networking is simplest:
-  `./manage.sh start --hostnet`
-- In bridge mode, ensure the UDP range is open in your firewall.
-
-## Run
+Serve `demo.html` locally (required for camera/screen permissions):
 ```bash
-./build/webrtc_capture --port 8080 --output out --write-mp4 --mp4-fps 30
+python3 -m http.server 8000
 ```
+Then open `http://localhost:8000/demo.html` and click **Start Webcam** or **Start Screen Share**.
 
 Outputs:
 - PNG frames: `out/frames/frame_00000001.png`
 - MP4 (optional): `out/capture.mp4`
 
-## HTTP API
-- `POST /offer` body: `{ "type":"offer", "sdp":"..." }`
-- `POST /candidate` body: `{ "sdpMid":"0", "sdpMLineIndex":0, "candidate":"candidate:..." }`
+## Demo flow (browser → Janus → RTP → capture)
+1. Browser connects to Janus over HTTP or WebSocket.
+2. Browser publishes a VP8 video stream to a VideoRoom.
+3. The demo calls Janus `rtp_forward` so video is sent to `capture:5004`.
+4. The capture service reads `/app/config/rtp.sdp` to decode RTP and writes frames.
 
-## Flow (high level)
-1. Browser sends `/offer` with SDP
-2. Server creates a `PeerConnection`, sets remote offer, returns `/answer`
-3. Browser sends ICE candidates to `/candidate`
-4. On `OnTrack`, the server attaches a `VideoFrameSink`
-5. Each frame is converted to BGR and written to disk
+## Janus configuration
+Files:
+- `janus/janus.jcfg`
+- `janus/janus.plugin.videoroom.jcfg`
 
-## Project layout
-- `src/app` App orchestrates config, WebRTC, and HTTP signaling
-- `src/signaling` HTTP server (cpp-httplib + nlohmann/json)
-- `src/webrtc` WebRTC factory, peer, SDP utils, observers, video sink
-- `src/media` OpenCV conversion and frame writer
-- `src/util` args parsing and logging
-- `tests` unit tests
+The VideoRoom plugin enables RTP forwarding and sets a default room. RTP forward uses:
+- host: `capture`
+- port: `5004`
+- payload type: `96` (VP8)
 
-## Browser client sample
-```html
-<!doctype html>
-<html>
-  <body>
-    <video id="local" autoplay playsinline muted></video>
-    <script>
-      const pc = new RTCPeerConnection();
-      const video = document.getElementById('local');
-
-      async function start() {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        video.srcObject = stream;
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-        pc.onicecandidate = async (event) => {
-          if (!event.candidate) return;
-          await fetch('http://localhost:8080/candidate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sdpMid: event.candidate.sdpMid,
-              sdpMLineIndex: event.candidate.sdpMLineIndex,
-              candidate: event.candidate.candidate
-            })
-          });
-        };
-
-        const offer = await pc.createOffer({ offerToReceiveVideo: false, offerToReceiveAudio: false });
-        await pc.setLocalDescription(offer);
-
-        const res = await fetch('http://localhost:8080/offer', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'offer', sdp: offer.sdp })
-        });
-
-        const answer = await res.json();
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
-      }
-
-      start().catch(console.error);
-    </script>
-  </body>
-</html>
+## Capture configuration
+Default RTP SDP: `config/rtp.sdp`
 ```
+v=0
+o=- 0 0 IN IP4 127.0.0.1
+s=Janus RTP
+c=IN IP4 0.0.0.0
+t=0 0
+m=video 5004 RTP/AVP 96
+a=rtpmap:96 VP8/90000
+a=recvonly
+```
+
+## CLI options (capture)
+```
+--rtp-url <url|sdp>      e.g. /app/config/rtp.sdp or rtp://0.0.0.0:5004?protocol_whitelist=file,udp,rtp
+--out <dir>              Output directory (default: out)
+--write-images 1|0       Enable/disable PNG output (default: 1)
+--write-video 1|0        Enable/disable MP4 output (default: 1)
+--fps <fps>              MP4 FPS (default: 30)
+--mp4 <path>             Override MP4 output path
+```
+
+You can pass these via env in `docker-compose.yml` or:
+```bash
+./manage.sh start --rtp-url /app/config/rtp.sdp --write-images 1 --write-video 1 --fps 30
+```
+
+## Docker ports
+- Janus HTTP: `8088`
+- Janus WebSocket: `8188`
+- Janus ICE/RTP: `10000-10200/udp`
+
+## Troubleshooting
+- If decoding fails, confirm the RTP payload type in `demo.html` matches `config/rtp.sdp`.
+- Ensure your browser publishes VP8 (default in the demo).
+- Use `./manage.sh logs` to inspect Janus and capture logs.
 
 ## Tests
 ```bash
 ctest --test-dir build
 ```
-
-## Notes
-- The server handles a single peer connection for v1.
-- ICE candidates from the browser must be sent to `/candidate`.
-- Audio is ignored.

@@ -1,6 +1,7 @@
-version: "3.8"
-
 services:
-  webrtc-capture:
+  janus:
+    network_mode: "host"
+    ports: []
+  capture:
     network_mode: "host"
     ports: []

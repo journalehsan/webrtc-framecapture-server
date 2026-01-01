@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Janus RTP Forward Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/janus-gateway@0.13.0/html/janus.js"></script>
+    <style>
+      body {
+        font-family: "IBM Plex Sans", "Noto Sans", sans-serif;
+        margin: 24px;
+        background: #f4f4f1;
+        color: #1f1f1f;
+      }
+      .controls {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      button {
+        padding: 10px 16px;
+        border: 1px solid #1f1f1f;
+        background: #fff;
+        cursor: pointer;
+      }
+      video {
+        width: 640px;
+        max-width: 100%;
+        background: #000;
+        border: 1px solid #1f1f1f;
+      }
+      pre {
+        background: #fff;
+        padding: 12px;
+        border: 1px solid #ddd;
+        height: 160px;
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Janus RTP Forward Demo</h1>
+    <div class="controls">
+      <button id="webcam">Start Webcam</button>
+      <button id="screen">Start Screen Share</button>
+      <button id="stop">Stop</button>
+    </div>
+    <video id="local" autoplay playsinline muted></video>
+    <h3>Log</h3>
+    <pre id="log"></pre>
+
+    <script>
+      const logEl = document.getElementById("log");
+      const localVideo = document.getElementById("local");
+      const roomId = 1234;
+      const rtpHost = "capture";
+      const rtpPort = 5004;
+      const rtpPt = 96;
+
+      let janus = null;
+      let videoRoom = null;
+      let myId = null;
+      let localStream = null;
+
+      function log(msg) {
+        logEl.textContent += msg + "\n";
+        logEl.scrollTop = logEl.scrollHeight;
+        console.log(msg);
+      }
+
+      function initJanus() {
+        return new Promise((resolve) => {
+          Janus.init({
+            debug: "all",
+            callback: resolve
+          });
+        });
+      }
+
+      function createJanus() {
+        return new Promise((resolve, reject) => {
+          janus = new Janus({
+            server: "http://localhost:8088/janus",
+            success: resolve,
+            error: reject,
+            destroyed: () => log("Janus destroyed")
+          });
+        });
+      }
+
+      function attachVideoRoom() {
+        return new Promise((resolve, reject) => {
+          janus.attach({
+            plugin: "janus.plugin.videoroom",
+            success: (pluginHandle) => {
+              videoRoom = pluginHandle;
+              resolve();
+            },
+            error: reject,
+            onmessage: (msg, jsep) => {
+              if (msg.videoroom === "joined") {
+                myId = msg.id;
+                log("Joined room as publisher id " + myId);
+                startRtpForward();
+              }
+              if (jsep) {
+                videoRoom.handleRemoteJsep({ jsep });
+              }
+            }
+          });
+        });
+      }
+
+      function ensureRoom() {
+        return new Promise((resolve) => {
+          videoRoom.send({
+            message: {
+              request: "create",
+              room: roomId,
+              publishers: 1,
+              videocodec: "vp8",
+              audiocodec: "none"
+            },
+            success: () => resolve(),
+            error: () => resolve()
+          });
+        });
+      }
+
+      function joinRoom() {
+        videoRoom.send({
+          message: {
+            request: "join",
+            room: roomId,
+            ptype: "publisher",
+            display: "browser"
+          }
+        });
+      }
+
+      async function publishStream(stream) {
+        localStream = stream;
+        localVideo.srcObject = stream;
+
+        videoRoom.createOffer({
+          stream: stream,
+          media: { audioSend: false, videoSend: true, audioRecv: false, videoRecv: false },
+          success: (jsep) => {
+            videoRoom.send({
+              message: { request: "configure", audio: false, video: true },
+              jsep: jsep
+            });
+          },
+          error: (err) => log("WebRTC error: " + err)
+        });
+      }
+
+      function startRtpForward() {
+        if (!myId) {
+          return;
+        }
+        videoRoom.send({
+          message: {
+            request: "rtp_forward",
+            room: roomId,
+            publisher_id: myId,
+            host: rtpHost,
+            video_port: rtpPort,
+            video_pt: rtpPt
+          },
+          success: (result) => log("RTP forward ok: " + JSON.stringify(result)),
+          error: (err) => log("RTP forward error: " + JSON.stringify(err))
+        });
+      }
+
+      async function start(mode) {
+        document.getElementById("webcam").disabled = true;
+        document.getElementById("screen").disabled = true;
+
+        await initJanus();
+        await createJanus();
+        await attachVideoRoom();
+        await ensureRoom();
+        joinRoom();
+
+        let stream;
+        if (mode === "screen") {
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        } else {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+        await publishStream(stream);
+      }
+
+      function stopAll() {
+        if (localStream) {
+          localStream.getTracks().forEach((t) => t.stop());
+          localStream = null;
+        }
+        if (videoRoom) {
+          videoRoom.hangup();
+          videoRoom.detach();
+          videoRoom = null;
+        }
+        if (janus) {
+          janus.destroy();
+          janus = null;
+        }
+        document.getElementById("webcam").disabled = false;
+        document.getElementById("screen").disabled = false;
+      }
+
+      document.getElementById("webcam").addEventListener("click", () => start("webcam"));
+      document.getElementById("screen").addEventListener("click", () => start("screen"));
+      document.getElementById("stop").addEventListener("click", stopAll);
+    </script>
+  </body>
+</html>

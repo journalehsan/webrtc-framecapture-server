@@ -16,9 +16,10 @@ Commands:
 
 Options:
   --hostnet           Use host networking (Linux-only)
-  --http-port <port>  Override HTTP port (default 8080)
-  --udp-min <port>    Override ICE UDP min (default 30000)
-  --udp-max <port>    Override ICE UDP max (default 30100)
+  --rtp-url <url>     Override RTP URL/SDP (default /app/config/rtp.sdp)
+  --write-images <0|1>  Enable/disable PNG output (default 1)
+  --write-video <0|1>   Enable/disable MP4 output (default 1)
+  --fps <fps>         Override video FPS (default 30)
 USAGE
 }
 
@@ -31,9 +32,10 @@ cmd="$1"
 shift
 
 use_hostnet=0
-http_port=""
-udp_min=""
-udp_max=""
+rtp_url=""
+write_images=""
+write_video=""
+fps=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,16 +43,20 @@ while [[ $# -gt 0 ]]; do
       use_hostnet=1
       shift
       ;;
-    --http-port)
-      http_port="$2"
+    --rtp-url)
+      rtp_url="$2"
       shift 2
       ;;
-    --udp-min)
-      udp_min="$2"
+    --write-images)
+      write_images="$2"
       shift 2
       ;;
-    --udp-max)
-      udp_max="$2"
+    --write-video)
+      write_video="$2"
+      shift 2
+      ;;
+    --fps)
+      fps="$2"
       shift 2
       ;;
     -h|--help)
@@ -71,14 +77,17 @@ if [[ "$use_hostnet" -eq 1 ]]; then
 fi
 
 env_args=()
-if [[ -n "$http_port" ]]; then
-  env_args+=("HTTP_PORT=$http_port")
+if [[ -n "$rtp_url" ]]; then
+  env_args+=("RTP_URL=$rtp_url")
 fi
-if [[ -n "$udp_min" ]]; then
-  env_args+=("ICE_UDP_MIN=$udp_min")
+if [[ -n "$write_images" ]]; then
+  env_args+=("WRITE_IMAGES=$write_images")
 fi
-if [[ -n "$udp_max" ]]; then
-  env_args+=("ICE_UDP_MAX=$udp_max")
+if [[ -n "$write_video" ]]; then
+  env_args+=("WRITE_VIDEO=$write_video")
+fi
+if [[ -n "$fps" ]]; then
+  env_args+=("FPS=$fps")
 fi
 
 docker_compose() {

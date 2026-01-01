@@ -1,0 +1,14 @@
+general: {
+  rtp_forward = true
+}
+
+rooms: {
+  room-1234: {
+    description = "Capture room"
+    publishers = 1
+    bitrate = 2000000
+    fir_freq = 10
+    videocodec = "vp8"
+    audiocodec = "none"
+  }
+}
