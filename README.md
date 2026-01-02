@@ -34,6 +34,14 @@ Outputs:
 - MP4 (optional): `out/capture.mp4`
   - If MP4 is unavailable on your system, the app falls back to `out/capture.avi` (MJPG).
 
+## Screenshots
+
+### Demo in browser
+![Demo Interface](Demo-Working-Screenshot.png)
+
+### Captured output
+![Captured Frames and Video](Result-Screenshot-1.png)
+
 ## Dockerless (Arch Linux)
 Install dependencies and build locally:
 ```bash
