@@ -33,6 +33,9 @@ bool RtpReceiver::Run() {
   AVFormatContext* format_ctx = nullptr;
   AVDictionary* options = nullptr;
 
+  av_dict_set(&options, "protocol_whitelist", "file,udp,rtp", 0);
+  av_dict_set(&options, "analyzeduration", "10000000", 0);
+  av_dict_set(&options, "probesize", "5000000", 0);
   int ret = avformat_open_input(&format_ctx, url_.c_str(), nullptr, &options);
   av_dict_free(&options);
   if (ret < 0) {
@@ -85,22 +88,7 @@ bool RtpReceiver::Run() {
     return false;
   }
 
-  SwsContext* sws_ctx = sws_getContext(codec_ctx->width,
-                                       codec_ctx->height,
-                                       codec_ctx->pix_fmt,
-                                       codec_ctx->width,
-                                       codec_ctx->height,
-                                       AV_PIX_FMT_BGR24,
-                                       SWS_BILINEAR,
-                                       nullptr,
-                                       nullptr,
-                                       nullptr);
-  if (!sws_ctx) {
-    LOG_ERROR("Failed to create swscale context");
-    avcodec_free_context(&codec_ctx);
-    avformat_close_input(&format_ctx);
-    return false;
-  }
+  SwsContext* sws_ctx = nullptr;
 
   AVPacket* packet = av_packet_alloc();
   AVFrame* frame = av_frame_alloc();
@@ -114,9 +102,9 @@ bool RtpReceiver::Run() {
     return false;
   }
 
-  cv::Mat bgr(codec_ctx->height, codec_ctx->width, CV_8UC3);
-  uint8_t* dst_data[4] = {bgr.data, nullptr, nullptr, nullptr};
-  int dst_linesize[4] = {static_cast<int>(bgr.step[0]), 0, 0, 0};
+  cv::Mat bgr;
+  int last_width = 0;
+  int last_height = 0;
 
   while (running_) {
     ret = av_read_frame(format_ctx, packet);
@@ -143,11 +131,48 @@ bool RtpReceiver::Run() {
             break;
           }
 
+          const int width = frame->width;
+          const int height = frame->height;
+          if (width <= 0 || height <= 0) {
+            continue;
+          }
+
+          if (width != last_width || height != last_height || !sws_ctx) {
+            if (sws_ctx) {
+              sws_freeContext(sws_ctx);
+            }
+            sws_ctx = sws_getContext(width,
+                                     height,
+                                     static_cast<AVPixelFormat>(frame->format),
+                                     width,
+                                     height,
+                                     AV_PIX_FMT_BGR24,
+                                     SWS_BILINEAR,
+                                     nullptr,
+                                     nullptr,
+                                     nullptr);
+            if (!sws_ctx) {
+              LOG_ERROR("Failed to create swscale context");
+              av_packet_unref(packet);
+              av_packet_free(&packet);
+              av_frame_free(&frame);
+              avcodec_free_context(&codec_ctx);
+              avformat_close_input(&format_ctx);
+              return false;
+            }
+            bgr = cv::Mat(height, width, CV_8UC3);
+            last_width = width;
+            last_height = height;
+          }
+
+          uint8_t* dst_data[4] = {bgr.data, nullptr, nullptr, nullptr};
+          int dst_linesize[4] = {static_cast<int>(bgr.step[0]), 0, 0, 0};
+
           sws_scale(sws_ctx,
                     frame->data,
                     frame->linesize,
                     0,
-                    codec_ctx->height,
+                    height,
                     dst_data,
                     dst_linesize);
 
@@ -163,7 +188,9 @@ bool RtpReceiver::Run() {
 
   av_packet_free(&packet);
   av_frame_free(&frame);
-  sws_freeContext(sws_ctx);
+  if (sws_ctx) {
+    sws_freeContext(sws_ctx);
+  }
   avcodec_free_context(&codec_ctx);
   avformat_close_input(&format_ctx);
   return true;

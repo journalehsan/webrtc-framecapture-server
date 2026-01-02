@@ -3,12 +3,13 @@ general: {
 }
 
 rooms: {
-  room-1234: {
+  room-4321: {
+    room = 4321
     description = "Capture room"
+    secret = "capturesecret"
     publishers = 1
     bitrate = 2000000
     fir_freq = 10
     videocodec = "vp8"
-    audiocodec = "none"
   }
 }

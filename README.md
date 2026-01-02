@@ -33,6 +33,26 @@ Outputs:
 - PNG frames: `out/frames/frame_00000001.png`
 - MP4 (optional): `out/capture.mp4`
 
+## Dockerless (Arch Linux)
+Install dependencies and build locally:
+```bash
+sudo pacman -S --needed opencv ffmpeg pkgconf cmake ninja base-devel
+./manage.sh setup --dockerless --install-janus
+```
+
+Start Janus + capture locally:
+```bash
+./manage.sh start --dockerless
+```
+
+Then open `http://localhost:8000/demo.html` and set:
+- `RTP Host`: `127.0.0.1`
+- `RTP Port`: `5004`
+
+Outputs:
+- PNG frames: `out/frames/frame_00000001.png`
+- MP4 (optional): `out/capture.mp4`
+
 ## Demo flow (browser → Janus → RTP → capture)
 1. Browser connects to Janus over HTTP or WebSocket.
 2. Browser publishes a VP8 video stream to a VideoRoom.
@@ -48,6 +68,7 @@ The VideoRoom plugin enables RTP forwarding and sets a default room. RTP forward
 - host: `capture`
 - port: `5004`
 - payload type: `96` (VP8)
+- room secret: `capturesecret`
 
 ## Capture configuration
 Default RTP SDP: `config/rtp.sdp`
@@ -86,6 +107,7 @@ You can pass these via env in `docker-compose.yml` or:
 - If decoding fails, confirm the RTP payload type in `demo.html` matches `config/rtp.sdp`.
 - Ensure your browser publishes VP8 (default in the demo).
 - Use `./manage.sh logs` to inspect Janus and capture logs.
+- If `bind failed: Address already in use`, another process is using UDP port 5004.
 
 ## Tests
 ```bash

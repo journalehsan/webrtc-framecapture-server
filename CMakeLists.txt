@@ -8,7 +8,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(ENABLE_TESTS "Build tests" ON)
 
 find_package(Threads REQUIRED)
-find_package(OpenCV REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libavutil libswscale)
 

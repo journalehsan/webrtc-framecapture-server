@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <title>Janus RTP Forward Demo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/janus-gateway@0.13.0/html/janus.js"></script>
+    <script src="vendor/adapter-latest.js"></script>
+    <script src="vendor/janus.js"></script>
     <style>
       body {
         font-family: "IBM Plex Sans", "Noto Sans", sans-serif;
@@ -46,6 +46,18 @@
       <button id="screen">Start Screen Share</button>
       <button id="stop">Stop</button>
     </div>
+    <div class="controls">
+      <label for="rtpHost">RTP Host</label>
+      <input id="rtpHost" type="text" value="capture">
+      <label for="rtpPort">RTP Port</label>
+      <input id="rtpPort" type="number" value="5006" min="1" max="65535">
+      <label for="rtpPt">RTP PT</label>
+      <input id="rtpPt" type="number" value="96" min="0" max="127">
+    </div>
+    <p>
+      Serve this page locally for camera permissions:
+      <code>python3 -m http.server 8000</code>
+    </p>
     <video id="local" autoplay playsinline muted></video>
     <h3>Log</h3>
     <pre id="log"></pre>
@@ -53,20 +65,54 @@
     <script>
       const logEl = document.getElementById("log");
       const localVideo = document.getElementById("local");
-      const roomId = 1234;
-      const rtpHost = "capture";
-      const rtpPort = 5004;
-      const rtpPt = 96;
+      const roomId = 4321;
+      let rtpHost = "capture";
+      let rtpPort = 5006;
+      let rtpPt = 96;
 
       let janus = null;
       let videoRoom = null;
       let myId = null;
       let localStream = null;
+      let forwardStarted = false;
+      let forwardAttempts = 0;
+      let mdnsDetected = false;
+      let mdnsWarningShown = false;
 
       function log(msg) {
         logEl.textContent += msg + "\n";
         logEl.scrollTop = logEl.scrollHeight;
         console.log(msg);
+      }
+
+      function maybeWarnMdns(candidate) {
+        if (!candidate || mdnsWarningShown) {
+          return;
+        }
+        if (candidate.indexOf(".local") === -1 && candidate.toLowerCase().indexOf("mdns") === -1) {
+          return;
+        }
+        mdnsDetected = true;
+        mdnsWarningShown = true;
+        log("WARNING: Detected mDNS ICE candidates (.local). Janus can't resolve them.");
+        log("TIP: Use Firefox or launch Chrome with --disable-features=WebRtcHideLocalIpsWithMdns");
+        log("See TROUBLESHOOTING.md for details.");
+      }
+
+      function attachIceCandidateLogger() {
+        if (!videoRoom || !videoRoom.webrtcStuff || !videoRoom.webrtcStuff.pc) {
+          return;
+        }
+        const pc = videoRoom.webrtcStuff.pc;
+        if (pc.__mdnsListenerAttached) {
+          return;
+        }
+        pc.__mdnsListenerAttached = true;
+        pc.addEventListener("icecandidate", (event) => {
+          if (event.candidate && event.candidate.candidate) {
+            maybeWarnMdns(event.candidate.candidate);
+          }
+        });
       }
 
       function initJanus() {
@@ -81,7 +127,8 @@
       function createJanus() {
         return new Promise((resolve, reject) => {
           janus = new Janus({
-            server: "http://localhost:8088/janus",
+            server: "ws://localhost:8188/janus",
+            iceServers: [],
             success: resolve,
             error: reject,
             destroyed: () => log("Janus destroyed")
@@ -98,11 +145,36 @@
               resolve();
             },
             error: reject,
+            iceState: (state) => {
+              log("ICE state: " + state);
+              if (state === "failed" || state === "disconnected") {
+                log("ERROR: ICE " + state + " - connection lost!");
+              }
+            },
+            webrtcState: (isConnected) => {
+              log("WebRTC " + (isConnected ? "connected" : "disconnected"));
+              if (!isConnected) {
+                log("ERROR: WebRTC disconnected - investigating why...");
+                if (mdnsDetected) {
+                  log("Likely mDNS ICE failure. See TROUBLESHOOTING.md for fix.");
+                }
+              }
+            },
+            mediaState: (medium, receiving, mid) => {
+              log("Media state: " + medium + " - receiving: " + receiving);
+            },
+            slowLink: (uplink, lost, mid) => {
+              log("WARNING: Slow link detected! uplink=" + uplink + ", lost=" + lost);
+            },
             onmessage: (msg, jsep) => {
               if (msg.videoroom === "joined") {
                 myId = msg.id;
                 log("Joined room as publisher id " + myId);
-                startRtpForward();
+              }
+              if (msg.videoroom === "event" && msg.configured === "ok") {
+                log("Publisher configured");
+                // Wait 1 second for media to flow before forwarding
+                setTimeout(startRtpForward, 1000);
               }
               if (jsep) {
                 videoRoom.handleRemoteJsep({ jsep });
@@ -120,7 +192,7 @@
               room: roomId,
               publishers: 1,
               videocodec: "vp8",
-              audiocodec: "none"
+              secret: "capturesecret"
             },
             success: () => resolve(),
             error: () => resolve()
@@ -143,10 +215,34 @@
         localStream = stream;
         localVideo.srcObject = stream;
 
+        const videoTrack = stream.getVideoTracks()[0] || null;
+        if (!videoTrack || videoTrack.readyState !== "live" || !stream.active) {
+          const state = videoTrack ? videoTrack.readyState : "missing";
+          log("ERROR: Video track is not live (state: " + state + "). Check camera permissions or other apps.");
+          stopAll();
+          return;
+        }
+
+        // Monitor track state
+        stream.getTracks().forEach((track) => {
+          log("Track added: " + track.kind + " - " + track.label + " (state: " + track.readyState + ")");
+          track.addEventListener("ended", () => {
+            log("WARNING: Track ended unexpectedly!");
+          });
+          track.addEventListener("mute", () => {
+            log("WARNING: Track muted!");
+          });
+        });
+
         videoRoom.createOffer({
           stream: stream,
           media: { audioSend: false, videoSend: true, audioRecv: false, videoRecv: false },
+          customizeSdp: (jsep) => {
+            // Force relay candidates to avoid mDNS issues
+            Janus.debug("Original SDP:", jsep.sdp);
+          },
           success: (jsep) => {
+            attachIceCandidateLogger();
             videoRoom.send({
               message: { request: "configure", audio: false, video: true },
               jsep: jsep
@@ -157,40 +253,76 @@
       }
 
       function startRtpForward() {
-        if (!myId) {
+        if (!myId || forwardStarted) {
           return;
         }
+        forwardAttempts += 1;
         videoRoom.send({
           message: {
             request: "rtp_forward",
             room: roomId,
             publisher_id: myId,
+            secret: "capturesecret",
             host: rtpHost,
             video_port: rtpPort,
             video_pt: rtpPt
           },
-          success: (result) => log("RTP forward ok: " + JSON.stringify(result)),
-          error: (err) => log("RTP forward error: " + JSON.stringify(err))
+          success: (result) => {
+            if (result && result.error) {
+              log("RTP forward error: " + JSON.stringify(result));
+              retryForward();
+              return;
+            }
+            forwardStarted = true;
+            log("RTP forward ok: " + JSON.stringify(result));
+          },
+          error: (err) => {
+            log("RTP forward error: " + JSON.stringify(err));
+            retryForward();
+          }
         });
       }
 
+      function retryForward() {
+        if (forwardStarted || forwardAttempts >= 5) {
+          return;
+        }
+        setTimeout(startRtpForward, 1000);
+      }
+
       async function start(mode) {
+        // Prevent multiple concurrent starts
+        if (janus !== null) {
+          log("Already connected, please stop first");
+          return;
+        }
+
+        rtpHost = document.getElementById("rtpHost").value.trim() || rtpHost;
+        rtpPort = Number(document.getElementById("rtpPort").value) || rtpPort;
+        rtpPt = Number(document.getElementById("rtpPt").value) || rtpPt;
+
         document.getElementById("webcam").disabled = true;
         document.getElementById("screen").disabled = true;
 
-        await initJanus();
-        await createJanus();
-        await attachVideoRoom();
-        await ensureRoom();
-        joinRoom();
+        try {
+          await initJanus();
+          await createJanus();
+          await attachVideoRoom();
+          await ensureRoom();
+          joinRoom();
 
-        let stream;
-        if (mode === "screen") {
-          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-        } else {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          let stream;
+          if (mode === "screen") {
+            stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          } else {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          }
+          await publishStream(stream);
+          log("Stream published successfully, keeping connection alive...");
+        } catch (err) {
+          log("Error during start: " + err);
+          stopAll();
         }
-        await publishStream(stream);
       }
 
       function stopAll() {
@@ -207,6 +339,8 @@
           janus.destroy();
           janus = null;
         }
+        forwardStarted = false;
+        forwardAttempts = 0;
         document.getElementById("webcam").disabled = false;
         document.getElementById("screen").disabled = false;
       }

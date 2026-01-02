@@ -1,7 +1,5 @@
 services:
   janus:
     network_mode: "host"
-    ports: []
   capture:
     network_mode: "host"
-    ports: []

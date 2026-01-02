@@ -1,0 +1,17 @@
+FROM canyan/janus-gateway:latest
+
+USER root
+
+# Install Avahi for mDNS resolution
+RUN apt-get update && apt-get install -y \
+    avahi-daemon \
+    avahi-utils \
+    libnss-mdns \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configure Avahi
+RUN mkdir -p /var/run/avahi-daemon
+
+USER janus
+
+ENTRYPOINT ["/usr/local/bin/janus"]
