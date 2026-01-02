@@ -4,63 +4,62 @@
     <meta charset="utf-8">
     <title>Janus RTP Forward Demo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="vendor/adapter-latest.js"></script>
     <script src="vendor/janus.js"></script>
-    <style>
-      body {
-        font-family: "IBM Plex Sans", "Noto Sans", sans-serif;
-        margin: 24px;
-        background: #f4f4f1;
-        color: #1f1f1f;
-      }
-      .controls {
-        display: flex;
-        gap: 12px;
-        margin-bottom: 16px;
-      }
-      button {
-        padding: 10px 16px;
-        border: 1px solid #1f1f1f;
-        background: #fff;
-        cursor: pointer;
-      }
-      video {
-        width: 640px;
-        max-width: 100%;
-        background: #000;
-        border: 1px solid #1f1f1f;
-      }
-      pre {
-        background: #fff;
-        padding: 12px;
-        border: 1px solid #ddd;
-        height: 160px;
-        overflow: auto;
-      }
-    </style>
   </head>
-  <body>
-    <h1>Janus RTP Forward Demo</h1>
-    <div class="controls">
-      <button id="webcam">Start Webcam</button>
-      <button id="screen">Start Screen Share</button>
-      <button id="stop">Stop</button>
+  <body class="bg-gray-100 text-gray-900 min-h-screen p-6">
+    <div class="max-w-4xl mx-auto">
+      <h1 class="text-3xl font-bold text-gray-900 mb-8">Janus RTP Forward Demo</h1>
+      
+      <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 class="text-xl font-semibold mb-4">Media Controls</h2>
+        <div class="flex flex-wrap gap-3 mb-4">
+          <button id="webcam" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500">Start Webcam</button>
+          <button id="screen" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-green-500">Start Screen Share</button>
+          <button id="stop" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-500">Stop</button>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 class="text-xl font-semibold mb-4">RTP Configuration</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label for="rtpHost" class="block text-sm font-medium text-gray-700 mb-1">RTP Host</label>
+            <input id="rtpHost" type="text" value="capture" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          </div>
+          <div>
+            <label for="rtpPort" class="block text-sm font-medium text-gray-700 mb-1">RTP Port</label>
+            <input id="rtpPort" type="number" value="5006" min="1" max="65535" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          </div>
+          <div>
+            <label for="rtpPt" class="block text-sm font-medium text-gray-700 mb-1">RTP PT</label>
+            <input id="rtpPt" type="number" value="96" min="0" max="127" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
+        <div class="flex">
+          <div class="ml-3">
+            <p class="text-sm text-blue-700">
+              <strong>Tip:</strong> Serve this page locally for camera permissions:
+              <code class="bg-blue-100 px-2 py-1 rounded text-blue-800">python3 -m http.server 8000</code>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 class="text-xl font-semibold mb-4">Local Video</h2>
+        <video id="local" autoplay playsinline muted class="w-full max-w-2xl bg-black border border-gray-300 rounded-md"></video>
+      </div>
+
+      <div class="bg-white rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-semibold mb-4">Log</h2>
+        <pre id="log" class="bg-gray-50 border border-gray-200 rounded-md p-4 h-40 overflow-auto text-sm text-gray-800 font-mono"></pre>
+      </div>
     </div>
-    <div class="controls">
-      <label for="rtpHost">RTP Host</label>
-      <input id="rtpHost" type="text" value="capture">
-      <label for="rtpPort">RTP Port</label>
-      <input id="rtpPort" type="number" value="5006" min="1" max="65535">
-      <label for="rtpPt">RTP PT</label>
-      <input id="rtpPt" type="number" value="96" min="0" max="127">
-    </div>
-    <p>
-      Serve this page locally for camera permissions:
-      <code>python3 -m http.server 8000</code>
-    </p>
-    <video id="local" autoplay playsinline muted></video>
-    <h3>Log</h3>
-    <pre id="log"></pre>
 
     <script>
       const logEl = document.getElementById("log");
