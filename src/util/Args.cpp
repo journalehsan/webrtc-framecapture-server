@@ -6,6 +6,21 @@
 
 namespace util {
 
+// Parse command-line arguments and return an Args struct.
+//
+// This function iterates through argv and sets the corresponding fields
+// in the Args struct. It uses a simple linear scan rather than getopt
+// to avoid external dependencies.
+//
+// Argument handling:
+//   --out also updates --mp4_path to "<dir>/capture.mp4" for convenience
+//   --mp4 enables write_video automatically
+//   Unknown arguments are logged as warnings (not errors)
+//   --help prints usage and returns with default args
+//
+// Param: argc - Number of command-line arguments (from main())
+// Param: argv - Array of argument strings (from main())
+// Returns: Args struct with defaults overridden by provided arguments
 Args ParseArgs(int argc, char** argv) {
   Args args;
   for (int i = 1; i < argc; ++i) {
