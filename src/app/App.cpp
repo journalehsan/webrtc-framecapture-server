@@ -29,6 +29,7 @@ void App::Stop() {
   if (receiver_thread_.joinable()) {
     receiver_thread_.join();
   }
+  frame_writer_.Close();
 }
 
 }  // namespace app

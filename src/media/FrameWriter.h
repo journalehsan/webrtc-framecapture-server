@@ -18,6 +18,7 @@ class FrameWriter {
               double mp4_fps);
 
   void OnFrame(const cv::Mat& bgr);
+  void Close();
 
  private:
   void EnsureOutputDir();
@@ -28,6 +29,7 @@ class FrameWriter {
   bool write_images_;
   bool write_video_;
   std::string mp4_path_;
+  std::string video_path_;
   double mp4_fps_;
   size_t frame_index_ = 0;
   std::optional<cv::VideoWriter> writer_;

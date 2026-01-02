@@ -19,6 +19,7 @@ FrameWriter::FrameWriter(std::string output_dir,
       write_images_(write_images),
       write_video_(write_video),
       mp4_path_(std::move(mp4_path)),
+      video_path_(mp4_path_),
       mp4_fps_(mp4_fps) {}
 
 void FrameWriter::EnsureOutputDir() {
@@ -37,12 +38,25 @@ void FrameWriter::EnsureVideoWriter(const cv::Size& size) {
     return;
   }
   std::filesystem::create_directories(std::filesystem::path(mp4_path_).parent_path());
-  int fourcc = cv::VideoWriter::fourcc('a', 'v', 'c', '1');
+  int fourcc = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
   writer_.emplace(mp4_path_, fourcc, mp4_fps_, size, true);
-  if (!writer_->isOpened()) {
-    LOG_WARN("Failed to open MP4 writer, disabling video output");
-    writer_.reset();
+  if (writer_->isOpened()) {
+    video_path_ = mp4_path_;
+    return;
   }
+
+  writer_.reset();
+  std::filesystem::path avi_path = std::filesystem::path(mp4_path_).replace_extension(".avi");
+  int avi_fourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
+  writer_.emplace(avi_path.string(), avi_fourcc, mp4_fps_, size, true);
+  if (writer_->isOpened()) {
+    video_path_ = avi_path.string();
+    LOG_WARN("MP4 writer failed, falling back to " + video_path_);
+    return;
+  }
+
+  LOG_WARN("Failed to open video writer, disabling video output");
+  writer_.reset();
 }
 
 void FrameWriter::OnFrame(const cv::Mat& bgr) {
@@ -62,6 +76,14 @@ void FrameWriter::OnFrame(const cv::Mat& bgr) {
     (*writer_) << bgr;
   }
   ++frame_index_;
+}
+
+void FrameWriter::Close() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (writer_.has_value()) {
+    writer_->release();
+    writer_.reset();
+  }
 }
 
 }  // namespace media

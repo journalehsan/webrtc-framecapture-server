@@ -32,6 +32,7 @@ Then open `http://localhost:8000/demo.html` and click **Start Webcam** or **Star
 Outputs:
 - PNG frames: `out/frames/frame_00000001.png`
 - MP4 (optional): `out/capture.mp4`
+  - If MP4 is unavailable on your system, the app falls back to `out/capture.avi` (MJPG).
 
 ## Dockerless (Arch Linux)
 Install dependencies and build locally:
